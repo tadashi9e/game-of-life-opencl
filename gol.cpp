@@ -383,10 +383,20 @@ int main(int argc, char *argv[]) {
     const char* sourcep = source_string.c_str();
     const size_t source_size = source_string.length();
 
-    program = cl::Program(context, source_string, true);
-    auto buildInfo = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
-    for (auto& pair : buildInfo) {
-      std::cerr << "cl::Program: " << pair.second << std::endl << std::endl;
+    program = cl::Program(context, source_string);
+    try {
+      program.build();
+    } catch (const cl::Error& err) {
+      std::cout << "Build Status: "
+                << program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(
+                    context.getInfo<CL_CONTEXT_DEVICES>()[0]) << std::endl;
+      std::cout << "Build Options: "
+                << program.getBuildInfo<CL_PROGRAM_BUILD_OPTIONS>(
+                    context.getInfo<CL_CONTEXT_DEVICES>()[0]) << std::endl;
+      std::cout << "Build Log: "
+                << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(
+                    context.getInfo<CL_CONTEXT_DEVICES>()[0]) << std::endl;
+      throw err;
     }
     kernel = cl::Kernel(program, "devGolGenerate");
     kernel.setArg(0, dev_gol_map_in);
