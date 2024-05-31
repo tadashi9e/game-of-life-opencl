@@ -45,13 +45,10 @@ static cl::Memory dev_gol_image;
 static std::vector<size_t> elements_size;
 static std::vector<size_t> global_work_size;
 static std::vector<size_t> local_work_size;
-static size_t param_data_bytes;
-static size_t kernel_length;
 
 // ----------------------------------------------------------------------
 // gl variables
 // ----------------------------------------------------------------------
-static GLfloat angle = 0.0f;
 static int refresh_mills = 1000.0/30.0;  // refresh interval in milliseconds
 static bool full_screen_mode = false;
 static char title[] = "Game of Life on OpenCL (shared)";
@@ -66,8 +63,7 @@ static double ortho_top = 1.0;
 static double ortho_bottom = -1.0;
 static clock_t wall_clock = 0;
 
-static GLuint frame_buffer_name = 0;
-static GLuint rendered_texture, rendered_texture_out;
+static GLuint rendered_texture;
 
 // ----------------------------------------------------------------------
 // gl functions
@@ -277,8 +273,8 @@ void golMapRandFill() {
   {
     srand(seed);
     // #pragma omp for collapse(2)
-    for (int j=0; j < gol_map_width; ++j) {
-      for (int i=0; i < gol_map_height; ++i) {
+    for (size_t j = 0; j < gol_map_width; ++j) {
+      for (size_t i = 0; i < gol_map_height; ++i) {
         gol_map[i*gol_map_width+j] = (rand_r(&seed) & 0x1);
       }
     }
@@ -380,8 +376,6 @@ int main(int argc, char *argv[]) {
     /* end create buffers */
 
     const std::string source_string = loadProgramSource(kernel_source);
-    const char* sourcep = source_string.c_str();
-    const size_t source_size = source_string.length();
 
     program = cl::Program(context, source_string);
     try {
