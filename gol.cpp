@@ -16,7 +16,7 @@ static int sample_rate = 100000;
 // ----------------------------------------------------------------------
 // game variables
 // ----------------------------------------------------------------------
-static std::vector<char> gol_map;
+static std::vector<char> gol_map_image;
 static size_t gol_map_width = 512;
 static size_t gol_map_height = 512;
 static size_t gol_generation = 0;
@@ -77,9 +77,9 @@ static void display() {
   glScalef(zoom, zoom, 1.0);
 
   glEnable(GL_TEXTURE_2D);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
                gol_map_width, gol_map_height,
-               0, GL_LUMINANCE, GL_UNSIGNED_BYTE, &gol_map.front());
+               0, GL_RGBA, GL_UNSIGNED_BYTE, &gol_map_image.front());
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
 
   glBegin(GL_QUADS);
@@ -199,11 +199,11 @@ static void initGL(int argc, char *argv[]) {
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST_MIPMAP_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE,
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
                gol_map_width, gol_map_height,
-               0, GL_LUMINANCE, GL_UNSIGNED_BYTE, 0);
+               0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
   glFinish();
 }
@@ -267,7 +267,9 @@ static std::string loadProgramSource(const char *filename) {
 // ----------------------------------------------------------------------
 // game functions
 // ----------------------------------------------------------------------
-void golMapRandFill() {
+std::vector<char> golMapRandFill() {
+  std::vector<char> gol_map_init;
+  gol_map_init.resize(global_work_size[0] * global_work_size[1]);
   unsigned seed = time(0);
   // #pragma omp parallel firstprivate(seed)
   {
@@ -275,10 +277,11 @@ void golMapRandFill() {
     // #pragma omp for collapse(2)
     for (size_t j = 0; j < gol_map_width; ++j) {
       for (size_t i = 0; i < gol_map_height; ++i) {
-        gol_map[i*gol_map_width+j] = (rand_r(&seed) & 0x1);
+        gol_map_init[i * gol_map_width + j] = (rand_r(&seed) & 0x1);
       }
     }
   }
+  return gol_map_init;
 }
 
 int main(int argc, char *argv[]) {
@@ -309,12 +312,12 @@ int main(int argc, char *argv[]) {
               << (global_work_size[1] / local_work_size[1])
               << std::endl;
     /* allocate host memory */
-    gol_map.resize(global_work_size[0] * global_work_size[1]);
+    gol_map_image.resize(global_work_size[0] * global_work_size[1] * 4);
     /* end allocate host memory */
 
-    /* init gol_map */
-    golMapRandFill();
-    /* end init gol_map */
+    /* init gol_map_init */
+    std::vector<char> gol_map_init = golMapRandFill();
+    /* end init gol_map_init */
 
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
@@ -401,7 +404,7 @@ int main(int argc, char *argv[]) {
     command_queue.enqueueWriteBuffer(
         dev_gol_map_in, CL_FALSE, 0,
         sizeof(cl_char) * global_work_size[0] * global_work_size[1],
-        &gol_map.front());
+        &gol_map_init.front());
 
     startGL();
   } catch (const cl::Error& err) {

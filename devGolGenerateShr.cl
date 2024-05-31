@@ -30,6 +30,10 @@ __kernel void devGolGenerate(__global unsigned char *map_in, __global unsigned c
         map_out[ y * gw + x ] = 1;
     else
         map_out[ y * gw + x ] = get(map_in, x, y, width, height, gw, gh);
-
-    write_imagef(image, (int2)(x,y), map_out[ y * gw + x ] ? (1.0) : (0.0));
+    float r = (map_out[y * gw + x] != 0) ? 1.0 : 0.0;
+    float g = ((map_in[y * gw + x] != 0) &&
+               (map_out[y * gw + x] != 0)) ? 1.0 : 0.0;
+    float b = (map_in[y * gw + x] != 0) ? 1.0 : 0.0;
+    float4 pixel = (float4)(r, g, b, 255);
+    write_imagef(image, (int2)(x,y), pixel);
 }
