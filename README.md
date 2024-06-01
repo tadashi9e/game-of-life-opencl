@@ -16,6 +16,13 @@ make
 ```
 
 ## Execution
+
 ```
-./gol
+./gol [-w WIDTH] [-h HEIGHT] [-f file]
 ```
+
+ -w : field width
+ -h : field height
+ -f : Life1.05 format file
+
+

@@ -1,7 +1,9 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <unistd.h>
 #include <omp.h>
+#include <algorithm>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -93,23 +95,12 @@ static void display() {
 }
 
 static void reshape(GLsizei width, GLsizei height) {
-  // Compute aspect ratio of the new window
-  if (height == 0) height = 1;                // To prevent divide by 0
-  GLfloat aspect = (GLfloat)width / (GLfloat)height;
-
   // Set the viewport to cover the new window
   glViewport(0, 0, width, height);
 
   // Set the aspect ratio of the clipping area to match the viewport
   glMatrixMode(GL_PROJECTION);  // To operate on the Projection matrix
   glLoadIdentity();             // Reset the projection matrix
-  if (width >= height) {
-    // aspect >= 1, set the height from -1 to 1, with larger width
-    gluOrtho2D(-1.0 * aspect, 1.0 * aspect, -1.0, 1.0);
-  } else {
-    // aspect < 1, set the width to -1 to 1, with larger height
-    gluOrtho2D(-1.0, 1.0, -1.0 / aspect, 1.0 / aspect);
-  }
 }
 
 static void specialKeys(int key, int x, int y) {
@@ -285,9 +276,100 @@ std::vector<char> golMapRandFill() {
   return gol_map_init;
 }
 
+inline void rtrim(std::string &s) {
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), s.end());
+}
+
+// Life1.05 file loader function
+std::vector<char> load_life105_file(const std::string& fname) {
+  std::vector<char> gol_map_init;
+  gol_map_init.resize(global_work_size[0] * global_work_size[1]);
+  std::ifstream f;
+  f.open(fname);
+  if (f.fail()) {
+    throw std::runtime_error("failed to open Life1.05 file");
+  }
+  std::string line;
+  int offset_x = gol_map_width / 2;
+  int x = offset_x;
+  int y = gol_map_height / 2;
+  while (std::getline(f, line)) {
+    rtrim(line);
+    if (line.size() > 0 && line.at(0) == '#') {
+      if (line == "#Life 1.05") {
+        continue;
+      }
+      if (line.substr(0, 3) == "#P ") {
+        const std::string s = line.substr(3);
+        size_t i = s.find(' ');
+        const std::string sx = s.substr(0, i);
+        const std::string sy = s.substr(i + 1);
+        offset_x = x = std::stoi(sx);
+        y = gol_map_height - 1 - std::stoi(sy);
+        std::cout << "#P " << x << " " << y << std::endl;
+      } else {
+        std::cout << "LIFE1.05: ignored '" << line << "'" << std::endl;
+      }
+      continue;
+    }
+    for (const char c : line) {
+      switch (c) {
+      case '.':
+        gol_map_init[y * gol_map_width + x] = 0;
+        break;
+      case '*':
+        gol_map_init[y * gol_map_width + x] = 1;
+        std::cout << "(" << x << "," << y << ")" << std::endl;
+        break;
+      default:
+        std::cout << "LIFE1.05: invalid '" << line << "'" << std::endl;
+        throw std::runtime_error("invalid LIFE1.05 format");
+      }
+      ++x;
+    }
+    x = offset_x;
+    --y;
+  }
+  return gol_map_init;
+}
+
 int main(int argc, char *argv[]) {
   cl_int err;
   try {
+    std::string life105file;
+    for (;;) {
+      int opt = getopt(argc, argv, "w:h:f:");
+      if (opt == -1) {
+        break;
+      }
+      switch (opt) {
+      case 'f':
+        life105file = optarg;
+        break;
+      case 'w':
+        {
+          const int w = atoi(optarg);
+          gol_map_width = w;
+          window_width = w;
+        }
+        break;
+      case 'h':
+        {
+          const int h = atoi(optarg);
+          gol_map_height = h;
+          window_height = h;
+        }
+        break;
+      default:
+        std::cerr << "Usage:" << argv[0] <<
+                  " [-w width]"
+                  " [-h height]"
+                  " [-f Life105_file]" << std::endl;
+        exit(1);
+      }
+    }
     initGL(argc, argv);
     elements_size = std::vector<size_t>({
         gol_map_width, gol_map_height});  // cell slots
@@ -317,7 +399,12 @@ int main(int argc, char *argv[]) {
     /* end allocate host memory */
 
     /* init gol_map_init */
-    std::vector<char> gol_map_init = golMapRandFill();
+    std::vector<char> gol_map_init;
+    if (life105file.empty()) {
+      gol_map_init = golMapRandFill();
+    } else {
+      gol_map_init = load_life105_file(life105file);
+    }
     /* end init gol_map_init */
 
     std::vector<cl::Platform> platforms;
