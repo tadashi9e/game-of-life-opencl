@@ -1,11 +1,12 @@
-# game-of-life-opencl
-A OpenCL implementation of Conway's Game of Life
+# game-of-life-opencl (Rock-Paper-Scissors)
+A OpenCL implementation of Conway's Game of Life, Rock-Paper-Scissors variant.
 
 ## Requirement
-* OpenCL >= 1.1
+
+* OpenCL >= 2.2
 * OpenGL >= 4.4
 * X11
-* gcc >= 4.9
+* g++ >= 11.4
 
 ## Platform
 * Linux
@@ -18,11 +19,21 @@ make
 ## Execution
 
 ```
-./gol [-w WIDTH] [-h HEIGHT] [-f file]
+./gol [-w width] [-h height] [-i interval_millis] [-r Life105_file] [-s Life105_file] [-p Life105_file] [-P]
+
+ -w : field width.
+ -h : field height.
+ -i : step interval in milli seconds.
+ -r : Life1.05 format file ('Rock').
+ -s : Life1.05 format file ('Scissors').
+ -p : Life1.05 format file ('Paper').
+ -P : Paused at start. Will be released by 'p' key.
 ```
 
- -w : field width
- -h : field height
- -f : Life1.05 format file
+## Example
 
+```
+./gol -h 1024 -w 1024 -i 10 -r pattern/glider_gun.life -s pattern/puffer_train.life -p pattern/acorn.life
+```
 
+<https://youtu.be/2De6dKQT-TE?si=IuZSVgskHLxjf2ch>

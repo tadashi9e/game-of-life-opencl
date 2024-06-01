@@ -18,6 +18,7 @@ static int sample_rate = 100000;
 // ----------------------------------------------------------------------
 // game variables
 // ----------------------------------------------------------------------
+static int paused = 0;
 static std::vector<char> gol_map_image;
 static size_t gol_map_width = 1024;
 static size_t gol_map_height = 1024;
@@ -51,6 +52,7 @@ static std::vector<size_t> local_work_size;
 // ----------------------------------------------------------------------
 // gl variables
 // ----------------------------------------------------------------------
+static int gen_mills = 0;
 static int refresh_mills = 1000.0/30.0;  // refresh interval in milliseconds
 static bool full_screen_mode = false;
 static char title[] = "Game of Life on OpenCL (shared)";
@@ -134,7 +136,20 @@ static void specialKeys(int key, int x, int y) {
     break;
   }
 }
-
+static void nonspecialKeys(unsigned char key, int x, int y) {
+  switch (key) {
+  case 'p':
+    if (paused == 0) {
+      paused = 2;
+    } else {
+      paused = 0;
+    }
+    break;
+  case 'q':
+    glutLeaveMainLoop();
+    break;
+  }
+}
 static void mouse(int button, int state, int x, int y) {
   // Wheel reports as button 3(scroll up) and button 4(scroll down)
   if ((button == 3) || (button == 4)) {  // It's a wheel event
@@ -180,6 +195,7 @@ static void initGL(int argc, char *argv[]) {
   glutReshapeFunc(reshape);
   // Register callback handler for special-key event
   glutSpecialFunc(specialKeys);
+  glutKeyboardFunc(nonspecialKeys);
   glutMouseFunc(mouse);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
@@ -205,6 +221,10 @@ static void displayTimer(int dummy) {
 }
 
 static void generationTimer(int dummy) {
+  if (paused == 1) {
+    glutTimerFunc(gen_mills, generationTimer, 0);
+    return;
+  }
   try {
     std::vector<cl::Memory> dev_gol_image_vec({dev_gol_image});
     command_queue.enqueueAcquireGLObjects(&dev_gol_image_vec);
@@ -231,8 +251,10 @@ static void generationTimer(int dummy) {
         "fps[" << fps << "]" << std::endl;
       wall_clock = now;
     }
-
-    glutTimerFunc(0, generationTimer, 0);
+    if (paused == 2) {
+      paused = 1;
+    }
+    glutTimerFunc(gen_mills, generationTimer, 0);
   } catch (const cl::Error& err) {
     std::cerr << err.what() << std::endl;
     throw;
@@ -258,9 +280,14 @@ static std::string loadProgramSource(const char *filename) {
 // ----------------------------------------------------------------------
 // game functions
 // ----------------------------------------------------------------------
-std::vector<char> golMapRandFill() {
-  std::vector<char> gol_map_init;
-  gol_map_init.resize(global_work_size[0] * global_work_size[1]);
+// Rock-Paper-Scissors
+enum rps_type {
+  R = 0x01,
+  S = 0x02,
+  P = 0x04,
+};
+
+void golMapRandFill(std::vector<char>& gol_map_init) {
   unsigned seed = time(0);
   // #pragma omp parallel firstprivate(seed)
   {
@@ -268,12 +295,40 @@ std::vector<char> golMapRandFill() {
     // #pragma omp for collapse(2)
     for (size_t j = 0; j < gol_map_width; ++j) {
       for (size_t i = 0; i < gol_map_height; ++i) {
-        gol_map_init[i * gol_map_width + j] =
-          (rand_r(&seed) > RAND_MAX / 2) ? 1 : 0;
+        gol_map_init[i * gol_map_width + j]
+          |= (rand_r(&seed) < RAND_MAX / 10) ? R : 0;
+        gol_map_init[i * gol_map_width + j]
+          |= (rand_r(&seed) < RAND_MAX / 10) ? S : 0;
+        gol_map_init[i * gol_map_width + j]
+          |= (rand_r(&seed) < RAND_MAX / 10) ? P : 0;
       }
     }
   }
-  return gol_map_init;
+}
+
+void golMapRandFill_tricolor(std::vector<char>& gol_map_init) {
+  unsigned seed = time(0);
+  // #pragma omp parallel firstprivate(seed)
+  {
+    srand(seed);
+    // #pragma omp for collapse(2)
+    for (size_t j = 0; j < gol_map_width; ++j) {
+      for (size_t i = 0; i < gol_map_height; ++i) {
+        if (i < gol_map_height / 3) {
+          gol_map_init[i * gol_map_width + j]
+            |= (rand_r(&seed) < RAND_MAX / 10) ? R : 0;
+          continue;
+        }
+        if (i < gol_map_height * 2 / 3) {
+          gol_map_init[i * gol_map_width + j]
+            |= (rand_r(&seed) < RAND_MAX / 10) ? S : 0;
+          continue;
+        }
+        gol_map_init[i * gol_map_width + j]
+          |= (rand_r(&seed) < RAND_MAX / 10) ? P : 0;
+      }
+    }
+  }
 }
 
 inline void rtrim(std::string &s) {
@@ -283,18 +338,19 @@ inline void rtrim(std::string &s) {
 }
 
 // Life1.05 file loader function
-std::vector<char> load_life105_file(const std::string& fname) {
-  std::vector<char> gol_map_init;
-  gol_map_init.resize(global_work_size[0] * global_work_size[1]);
+void load_life105_file(std::vector<char>& gol_map_init,
+                       const std::string& fname,
+                       rps_type type,
+                       int offset_x,
+                       int offset_y) {
   std::ifstream f;
   f.open(fname);
   if (f.fail()) {
     throw std::runtime_error("failed to open Life1.05 file");
   }
   std::string line;
-  int offset_x = gol_map_width / 2;
   int x = offset_x;
-  int y = gol_map_height / 2;
+  int y = offset_y;
   while (std::getline(f, line)) {
     rtrim(line);
     if (line.size() > 0 && line.at(0) == '#') {
@@ -317,11 +373,9 @@ std::vector<char> load_life105_file(const std::string& fname) {
     for (const char c : line) {
       switch (c) {
       case '.':
-        gol_map_init[y * gol_map_width + x] = 0;
         break;
       case '*':
-        gol_map_init[y * gol_map_width + x] = 1;
-        std::cout << "(" << x << "," << y << ")" << std::endl;
+        gol_map_init[y * gol_map_width + x] |= type;
         break;
       default:
         std::cout << "LIFE1.05: invalid '" << line << "'" << std::endl;
@@ -332,22 +386,20 @@ std::vector<char> load_life105_file(const std::string& fname) {
     x = offset_x;
     --y;
   }
-  return gol_map_init;
 }
 
 int main(int argc, char *argv[]) {
   cl_int err;
   try {
-    std::string life105file;
+    std::string life105file_r;
+    std::string life105file_s;
+    std::string life105file_p;
     for (;;) {
-      int opt = getopt(argc, argv, "w:h:f:");
+      int opt = getopt(argc, argv, "w:h:i:r:s:p:P");
       if (opt == -1) {
         break;
       }
       switch (opt) {
-      case 'f':
-        life105file = optarg;
-        break;
       case 'w':
         {
           const int w = atoi(optarg);
@@ -362,11 +414,38 @@ int main(int argc, char *argv[]) {
           window_height = h;
         }
         break;
+      case 'i':
+        gen_mills = atoi(optarg);
+        break;
+      case 'r':
+        life105file_r = optarg;
+        break;
+      case 's':
+        life105file_s = optarg;
+        break;
+      case 'p':
+        life105file_p = optarg;
+        break;
+      case 'P':
+        paused = 2;
+        break;
       default:
-        std::cerr << "Usage:" << argv[0] <<
-                  " [-w width]"
-                  " [-h height]"
-                  " [-f Life105_file]" << std::endl;
+        std::cerr << "Usage: " << argv[0] <<
+          " [-w width]"
+          " [-h height]"
+          " [-i interval_millis]"
+          " [-r Life105_file]"
+          " [-s Life105_file]"
+          " [-p Life105_file]"
+          " [-P]" << std::endl;
+        std::cerr << " -w : field width." << std::endl;
+        std::cerr << " -h : field height." << std::endl;
+        std::cerr << " -i : step interval in milli seconds." << std::endl;
+        std::cerr << " -r : Life1.05 format file ('Rock')." << std::endl;
+        std::cerr << " -s : Life1.05 format file ('Scissors')." << std::endl;
+        std::cerr << " -p : Life1.05 format file ('Paper')." << std::endl;
+        std::cerr << " -P : Pause at start. Will be released by 'p' key."
+                  << std::endl;
         exit(1);
       }
     }
@@ -400,10 +479,24 @@ int main(int argc, char *argv[]) {
 
     /* init gol_map_init */
     std::vector<char> gol_map_init;
-    if (life105file.empty()) {
-      gol_map_init = golMapRandFill();
+    gol_map_init.resize(global_work_size[0] * global_work_size[1]);
+    if (life105file_r.empty() &&
+        life105file_s.empty() &&
+        life105file_p.empty()) {
+      golMapRandFill_tricolor(gol_map_init);
     } else {
-      gol_map_init = load_life105_file(life105file);
+      if (!life105file_r.empty()) {
+        load_life105_file(gol_map_init, life105file_r, R,
+                          gol_map_width / 2, gol_map_height * 3 / 4);
+      }
+      if (!life105file_s.empty()) {
+        load_life105_file(gol_map_init, life105file_s, S,
+                          gol_map_width / 2, gol_map_height * 2 / 4);
+      }
+      if (!life105file_p.empty()) {
+        load_life105_file(gol_map_init, life105file_p, P,
+                          gol_map_width / 2, gol_map_height / 4);
+      }
     }
     /* end init gol_map_init */
 
