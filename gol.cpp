@@ -17,8 +17,8 @@ static int sample_rate = 100000;
 // game variables
 // ----------------------------------------------------------------------
 static std::vector<char> gol_map_image;
-static size_t gol_map_width = 512;
-static size_t gol_map_height = 512;
+static size_t gol_map_width = 1024;
+static size_t gol_map_height = 1024;
 static size_t gol_generation = 0;
 
 // ----------------------------------------------------------------------
@@ -52,8 +52,8 @@ static std::vector<size_t> local_work_size;
 static int refresh_mills = 1000.0/30.0;  // refresh interval in milliseconds
 static bool full_screen_mode = false;
 static char title[] = "Game of Life on OpenCL (shared)";
-static int window_width  = 512;     // Windowed mode's width
-static int window_height = 512;     // Windowed mode's height
+static int window_width  = 1024;     // Windowed mode's width
+static int window_height = 1024;     // Windowed mode's height
 static int window_pos_x   = 50;      // Windowed mode's top-left corner x
 static int window_pos_y   = 50;      // Windowed mode's top-left corner y
 static double zoom = 1.0;
@@ -277,7 +277,8 @@ std::vector<char> golMapRandFill() {
     // #pragma omp for collapse(2)
     for (size_t j = 0; j < gol_map_width; ++j) {
       for (size_t i = 0; i < gol_map_height; ++i) {
-        gol_map_init[i * gol_map_width + j] = (rand_r(&seed) & 0x1);
+        gol_map_init[i * gol_map_width + j] =
+          (rand_r(&seed) > RAND_MAX / 2) ? 1 : 0;
       }
     }
   }
