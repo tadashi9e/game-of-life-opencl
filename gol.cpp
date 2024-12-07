@@ -72,6 +72,12 @@ static GLuint rendered_texture;
 // ----------------------------------------------------------------------
 // gl functions
 // ----------------------------------------------------------------------
+static void glCheck_(const char* target) {
+  const GLenum st = glGetError();
+  if (st) {
+    std::cout << target << ": " << gluErrorString(st) << std::endl;
+  }
+}
 static void display() {
   glClear(GL_COLOR_BUFFER_BIT);
   glMatrixMode(GL_MODELVIEW);
@@ -81,10 +87,8 @@ static void display() {
   glScalef(zoom, zoom, 1.0);
 
   glEnable(GL_TEXTURE_2D);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
-               gol_map_width, gol_map_height,
-               0, GL_RGBA, GL_UNSIGNED_BYTE, &gol_map_image.front());
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
+  glCheck_("glBindTexture");
 
   glBegin(GL_QUADS);
   glTexCoord2f(0.0, 0.0); glVertex3f(-1.0, -1.0, 0.0);
@@ -203,6 +207,7 @@ static void initGL(int argc, char *argv[]) {
   glEnable(GL_TEXTURE_2D);
 
   glGenTextures(1, &rendered_texture);
+  glCheck_("glGenTexture");
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -211,7 +216,7 @@ static void initGL(int argc, char *argv[]) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
                gol_map_width, gol_map_height,
                0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-
+  glCheck_("glTexImage2D");
   glFinish();
 }
 
@@ -523,7 +528,7 @@ int main(int argc, char *argv[]) {
         break;
       }
     }
-    const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>()();
+    const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>();
     cl_context_properties properties[7];
     properties[0] = CL_GL_CONTEXT_KHR;
     properties[1] =
