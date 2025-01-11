@@ -69,6 +69,91 @@ static clock_t wall_clock = 0;
 
 static GLuint rendered_texture;
 
+static void report_cl_error(const cl::Error& err) {
+  const char* s = "-";
+  switch (err.err()) {
+#define CASE_CL_CODE(code)\
+    case code: s = #code; break
+    CASE_CL_CODE(CL_DEVICE_NOT_FOUND);
+    CASE_CL_CODE(CL_DEVICE_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_COMPILER_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_MEM_OBJECT_ALLOCATION_FAILURE);
+    CASE_CL_CODE(CL_OUT_OF_RESOURCES);
+    CASE_CL_CODE(CL_OUT_OF_HOST_MEMORY);
+    CASE_CL_CODE(CL_PROFILING_INFO_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_MEM_COPY_OVERLAP);
+    CASE_CL_CODE(CL_IMAGE_FORMAT_MISMATCH);
+    CASE_CL_CODE(CL_IMAGE_FORMAT_NOT_SUPPORTED);
+    CASE_CL_CODE(CL_BUILD_PROGRAM_FAILURE);
+    CASE_CL_CODE(CL_MAP_FAILURE);
+#ifdef CL_VERSION_1_1
+    CASE_CL_CODE(CL_MISALIGNED_SUB_BUFFER_OFFSET);
+    CASE_CL_CODE(CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST);
+#endif
+#ifdef CL_VERSION_1_2
+    CASE_CL_CODE(CL_COMPILE_PROGRAM_FAILURE);
+    CASE_CL_CODE(CL_LINKER_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_LINK_PROGRAM_FAILURE);
+    CASE_CL_CODE(CL_DEVICE_PARTITION_FAILED);
+    CASE_CL_CODE(CL_KERNEL_ARG_INFO_NOT_AVAILABLE);
+#endif
+    CASE_CL_CODE(CL_INVALID_VALUE);
+    CASE_CL_CODE(CL_INVALID_DEVICE_TYPE);
+    CASE_CL_CODE(CL_INVALID_PLATFORM);
+    CASE_CL_CODE(CL_INVALID_DEVICE);
+    CASE_CL_CODE(CL_INVALID_CONTEXT);
+    CASE_CL_CODE(CL_INVALID_QUEUE_PROPERTIES);
+    CASE_CL_CODE(CL_INVALID_COMMAND_QUEUE);
+    CASE_CL_CODE(CL_INVALID_HOST_PTR);
+    CASE_CL_CODE(CL_INVALID_MEM_OBJECT);
+    CASE_CL_CODE(CL_INVALID_IMAGE_FORMAT_DESCRIPTOR);
+    CASE_CL_CODE(CL_INVALID_IMAGE_SIZE);
+    CASE_CL_CODE(CL_INVALID_SAMPLER);
+    CASE_CL_CODE(CL_INVALID_BINARY);
+    CASE_CL_CODE(CL_INVALID_BUILD_OPTIONS);
+    CASE_CL_CODE(CL_INVALID_PROGRAM);
+    CASE_CL_CODE(CL_INVALID_PROGRAM_EXECUTABLE);
+    CASE_CL_CODE(CL_INVALID_KERNEL_NAME);
+    CASE_CL_CODE(CL_INVALID_KERNEL_DEFINITION);
+    CASE_CL_CODE(CL_INVALID_KERNEL);
+    CASE_CL_CODE(CL_INVALID_ARG_INDEX);
+    CASE_CL_CODE(CL_INVALID_ARG_VALUE);
+    CASE_CL_CODE(CL_INVALID_ARG_SIZE);
+    CASE_CL_CODE(CL_INVALID_KERNEL_ARGS);
+    CASE_CL_CODE(CL_INVALID_WORK_DIMENSION);
+    CASE_CL_CODE(CL_INVALID_WORK_GROUP_SIZE);
+    CASE_CL_CODE(CL_INVALID_WORK_ITEM_SIZE);
+    CASE_CL_CODE(CL_INVALID_GLOBAL_OFFSET);
+    CASE_CL_CODE(CL_INVALID_EVENT_WAIT_LIST);
+    CASE_CL_CODE(CL_INVALID_EVENT);
+    CASE_CL_CODE(CL_INVALID_OPERATION);
+    CASE_CL_CODE(CL_INVALID_GL_OBJECT);
+    CASE_CL_CODE(CL_INVALID_BUFFER_SIZE);
+    CASE_CL_CODE(CL_INVALID_MIP_LEVEL);
+    CASE_CL_CODE(CL_INVALID_GLOBAL_WORK_SIZE);
+#ifdef CL_VERSION_1_1
+    CASE_CL_CODE(CL_INVALID_PROPERTY);
+#endif
+#ifdef CL_VERSION_1_2
+    CASE_CL_CODE(CL_INVALID_IMAGE_DESCRIPTOR);
+    CASE_CL_CODE(CL_INVALID_COMPILER_OPTIONS);
+    CASE_CL_CODE(CL_INVALID_LINKER_OPTIONS);
+    CASE_CL_CODE(CL_INVALID_DEVICE_PARTITION_COUNT);
+#endif
+#ifdef CL_VERSION_2_0
+    CASE_CL_CODE(CL_INVALID_PIPE_SIZE);
+    CASE_CL_CODE(CL_INVALID_DEVICE_QUEUE);
+#endif
+#ifdef CL_VERSION_2_2
+    CASE_CL_CODE(CL_INVALID_SPEC_ID);
+    CASE_CL_CODE(CL_MAX_SIZE_RESTRICTION_EXCEEDED);
+#endif
+    CASE_CL_CODE(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR);
+  }
+  std::cerr << "caught exception: " << err.what() <<
+    ": " << s << "(" << err.err() << ")" << std::endl;
+}
+
 // ----------------------------------------------------------------------
 // gl functions
 // ----------------------------------------------------------------------
@@ -78,7 +163,7 @@ static void glCheck_(const char* target) {
     std::cout << target << ": " << gluErrorString(st) << std::endl;
   }
 }
-static void display() {
+static void display_cb() {
   glClear(GL_COLOR_BUFFER_BIT);
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
@@ -100,7 +185,7 @@ static void display() {
   glutSwapBuffers();
 }
 
-static void reshape(GLsizei width, GLsizei height) {
+static void reshape_cb(GLsizei width, GLsizei height) {
   // Set the viewport to cover the new window
   glViewport(0, 0, width, height);
 
@@ -109,7 +194,7 @@ static void reshape(GLsizei width, GLsizei height) {
   glLoadIdentity();             // Reset the projection matrix
 }
 
-static void specialKeys(int key, int x, int y) {
+static void specialKeys_cb(int key, int x, int y) {
   switch (key) {
   case GLUT_KEY_F1:    // F1: Toggle between full-screen and windowed mode
     full_screen_mode = !full_screen_mode;         // Toggle state
@@ -140,7 +225,7 @@ static void specialKeys(int key, int x, int y) {
     break;
   }
 }
-static void nonspecialKeys(unsigned char key, int x, int y) {
+static void nonspecialKeys_cb(unsigned char key, int x, int y) {
   switch (key) {
   case 'p':
     if (paused == 0) {
@@ -154,7 +239,7 @@ static void nonspecialKeys(unsigned char key, int x, int y) {
     break;
   }
 }
-static void mouse(int button, int state, int x, int y) {
+static void mouse_cb(int button, int state, int x, int y) {
   // Wheel reports as button 3(scroll up) and button 4(scroll down)
   if ((button == 3) || (button == 4)) {  // It's a wheel event
     // Each wheel event reports like a button click, GLUT_DOWN then GLUT_UP
@@ -195,12 +280,12 @@ static void initGL(int argc, char *argv[]) {
   glutInitWindowPosition(window_pos_x, window_pos_y);
   glutCreateWindow(title);
 
-  glutDisplayFunc(display);
-  glutReshapeFunc(reshape);
+  glutDisplayFunc(display_cb);
+  glutReshapeFunc(reshape_cb);
   // Register callback handler for special-key event
-  glutSpecialFunc(specialKeys);
-  glutKeyboardFunc(nonspecialKeys);
-  glutMouseFunc(mouse);
+  glutSpecialFunc(specialKeys_cb);
+  glutKeyboardFunc(nonspecialKeys_cb);
+  glutMouseFunc(mouse_cb);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
   // texture
@@ -211,7 +296,7 @@ static void initGL(int argc, char *argv[]) {
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST_MIPMAP_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
                gol_map_width, gol_map_height,
@@ -220,14 +305,14 @@ static void initGL(int argc, char *argv[]) {
   glFinish();
 }
 
-static void displayTimer(int dummy) {
+static void displayTimer_cb(int dummy) {
   glutPostRedisplay();
-  glutTimerFunc(refresh_mills, displayTimer, 0);
+  glutTimerFunc(refresh_mills, displayTimer_cb, 0);
 }
 
-static void generationTimer(int dummy) {
+static void generationTimer_cb(int dummy) {
   if (paused == 1) {
-    glutTimerFunc(gen_mills, generationTimer, 0);
+    glutTimerFunc(gen_mills, generationTimer_cb, 0);
     return;
   }
   try {
@@ -259,7 +344,7 @@ static void generationTimer(int dummy) {
     if (paused == 2) {
       paused = 1;
     }
-    glutTimerFunc(gen_mills, generationTimer, 0);
+    glutTimerFunc(gen_mills, generationTimer_cb, 0);
   } catch (const cl::Error& err) {
     std::cerr << err.what() << std::endl;
     throw;
@@ -267,8 +352,8 @@ static void generationTimer(int dummy) {
 }
 
 static void startGL() {
-  glutTimerFunc(0, displayTimer, 0);
-  glutTimerFunc(0, generationTimer, 0);
+  glutTimerFunc(0, displayTimer_cb, 0);
+  glutTimerFunc(0, generationTimer_cb, 0);
   glutMainLoop();
 }
 
@@ -528,7 +613,7 @@ int main(int argc, char *argv[]) {
         break;
       }
     }
-    const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>();
+    const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>()();
     cl_context_properties properties[7];
     properties[0] = CL_GL_CONTEXT_KHR;
     properties[1] =
@@ -594,7 +679,7 @@ int main(int argc, char *argv[]) {
 
     startGL();
   } catch (const cl::Error& err) {
-    std::cerr << err.what() << std::endl;
+    report_cl_error(err);
   }
   return 0;
 }

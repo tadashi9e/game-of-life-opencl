@@ -1,4 +1,5 @@
-CUDA_HEADER_DIR=/usr/local/cuda-10.2/include
+#CUDA_HEADER_DIR=/usr/local/cuda-10.2/include
+CUDA_HEADER_DIR=/usr/local/cuda-12.5/include
 CXX_FLAGS=-Wall -D__CL_ENABLE_EXCEPTIONS
 
 all: gol
