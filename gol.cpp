@@ -60,11 +60,13 @@ static int window_width  = 1024;     // Windowed mode's width
 static int window_height = 1024;     // Windowed mode's height
 static int window_pos_x   = 50;      // Windowed mode's top-left corner x
 static int window_pos_y   = 50;      // Windowed mode's top-left corner y
-static double zoom = 1.0;
-static double ortho_left = -1.0;
-static double ortho_right = 1.0;
-static double ortho_top = 1.0;
-static double ortho_bottom = -1.0;
+static GLfloat translate_x = 0.0f;
+static GLfloat translate_y = 0.0f;
+static GLfloat zoom = 1.0f;
+static const GLfloat ORTHO_LEFT = -1.0f;
+static const GLfloat ORTHO_RIGHT = 1.0f;
+static const GLfloat ORTHO_TOP = 1.0f;
+static const GLfloat ORTHO_BOTTOM = -1.0f;
 static clock_t wall_clock = 0;
 
 static GLuint rendered_texture;
@@ -168,18 +170,21 @@ static void display_cb() {
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
 
-  glOrtho(ortho_left, ortho_right, ortho_bottom, ortho_top, -10, 10);
-  glScalef(zoom, zoom, 1.0);
+  glOrtho(ORTHO_LEFT, ORTHO_RIGHT,
+          ORTHO_BOTTOM, ORTHO_TOP,
+          -10, 10);
+  glScalef(zoom, zoom, 1.0f);
+  glTranslatef(translate_x, translate_y, 0.0f);
 
   glEnable(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
   glCheck_("glBindTexture");
 
   glBegin(GL_QUADS);
-  glTexCoord2f(0.0, 0.0); glVertex3f(-1.0, -1.0, 0.0);
-  glTexCoord2f(1.0, 0.0); glVertex3f(1.0,  -1.0, 0.0);
-  glTexCoord2f(1.0, 1.0); glVertex3f(1.0,   1.0, 0.0);
-  glTexCoord2f(0.0, 1.0); glVertex3f(-1.0,  1.0, 0.0);
+  glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f, 0.0f);
+  glTexCoord2f(1.0f, 0.0f); glVertex3f(1.0f,  -1.0f, 0.0f);
+  glTexCoord2f(1.0f, 1.0f); glVertex3f(1.0f,   1.0f, 0.0f);
+  glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f, 0.0f);
   glEnd();
 
   glutSwapBuffers();
@@ -215,9 +220,9 @@ static void specialKeys_cb(int key, int x, int y) {
     }
     break;
   case GLUT_KEY_HOME:
-    ortho_left = ortho_top = 1.0;
-    ortho_right = ortho_bottom = -1.0;
-    zoom = 1.0;
+    zoom = 1.0f;
+    translate_x = 0.0f;
+    translate_y = 0.0f;
     glutPostRedisplay();
     break;
   case GLUT_KEY_END:
@@ -239,38 +244,37 @@ static void nonspecialKeys_cb(unsigned char key, int x, int y) {
     break;
   }
 }
-static void mouse_cb(int button, int state, int x, int y) {
-  // Wheel reports as button 3(scroll up) and button 4(scroll down)
-  if ((button == 3) || (button == 4)) {  // It's a wheel event
-    // Each wheel event reports like a button click, GLUT_DOWN then GLUT_UP
-    if (state == GLUT_UP) return;  // Disregard redundant GLUT_UP events
-    std::cout << "Scroll " << ((button == 3) ? "Up" : "Down")
-              << " At " << x << " " << y << std::endl;
-
-    if (button == 3)
-      zoom += 0.1;
-    else
-      zoom -= 0.1;
-
-    if (zoom < 0) zoom = 0.1;
-
-    GLfloat aspect = (GLfloat)window_width / (GLfloat)window_height;
-
-    if (window_width >= window_height) {
-      ortho_left = (GLfloat)x / window_width - 2.0 / zoom;
-      ortho_right = (GLfloat)x / window_width + 2.0 / zoom;
-      ortho_top = (GLfloat)y / window_height / aspect + 2.0 / zoom;
-      ortho_bottom = (GLfloat)y / window_height / aspect - 2.0 / zoom;
-    } else {
-      ortho_left = (GLfloat)x / window_width * aspect - 2.0 / zoom;
-      ortho_right = (GLfloat)x / window_width * aspect + 2.0 / zoom;
-      ortho_top = (GLfloat)y / window_height + 2.0 / zoom;
-      ortho_bottom = (GLfloat)y / window_height - 2.0 / zoom;
+static void
+mouse_cb(int button, int state, int x, int y) {
+  switch (button) {
+  case GLUT_LEFT_BUTTON:
+    if (state == GLUT_DOWN) {
+      translate_x -=
+        ((ORTHO_RIGHT - ORTHO_LEFT) * x / window_width + ORTHO_LEFT) / zoom;
+      translate_y -=
+        ((ORTHO_BOTTOM - ORTHO_TOP) * y / window_height + ORTHO_TOP) / zoom;
+      glutPostRedisplay();
     }
-  } else {  // normal button event
-    std::cout << "Button " << ((state == GLUT_DOWN) ? "Down" : "Up")
-              << " At " << x << " " << y << std::endl;
+    break;
+  case GLUT_RIGHT_BUTTON:
+    if (state == GLUT_DOWN) {
+      translate_x = 0.0f;
+      translate_y = 0.0f;
+      zoom = 1.0f;
+      glutPostRedisplay();
+    }
+    break;
   }
+}
+static void
+wheel_cb(int wheel, int direction, int x, int y) {
+  if (direction == 1) {
+    zoom += 0.1f;
+  } else {
+    zoom -= 0.1f;
+  }
+  zoom = std::max(zoom, 1.0f);
+  glutPostRedisplay();
 }
 
 static void initGL(int argc, char *argv[]) {
@@ -286,6 +290,7 @@ static void initGL(int argc, char *argv[]) {
   glutSpecialFunc(specialKeys_cb);
   glutKeyboardFunc(nonspecialKeys_cb);
   glutMouseFunc(mouse_cb);
+  glutMouseWheelFunc(wheel_cb);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
   // texture
@@ -296,11 +301,11 @@ static void initGL(int argc, char *argv[]) {
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F,
                gol_map_width, gol_map_height,
-               0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+               0, GL_RGBA, GL_FLOAT, 0);
   glCheck_("glTexImage2D");
   glFinish();
 }
