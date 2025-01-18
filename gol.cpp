@@ -13,7 +13,7 @@
 #include <GL/freeglut.h>
 #include <GL/glx.h>
 
-static int sample_rate = 100000;
+static int sample_rate = 1000;
 
 // ----------------------------------------------------------------------
 // game variables
@@ -180,11 +180,13 @@ static void display_cb() {
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
   glCheck_("glBindTexture");
 
-  glBegin(GL_QUADS);
+  glBegin(GL_TRIANGLES);
   glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f, 0.0f);
   glTexCoord2f(1.0f, 0.0f); glVertex3f(1.0f,  -1.0f, 0.0f);
   glTexCoord2f(1.0f, 1.0f); glVertex3f(1.0f,   1.0f, 0.0f);
+  glTexCoord2f(1.0f, 1.0f); glVertex3f(1.0f,   1.0f, 0.0f);
   glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f, 0.0f);
+  glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f, 0.0f);
   glEnd();
 
   glutSwapBuffers();
@@ -343,7 +345,7 @@ static void generationTimer_cb(int dummy) {
       const double fps = static_cast<double>(sample_rate)
         / ((now - wall_clock) / CLOCKS_PER_SEC);
       std::cout << "generation[" << gol_generation << "],"
-        "fps[" << fps << "]" << std::endl;
+        "fps[" << fps << "]\r" << std::flush;
       wall_clock = now;
     }
     if (paused == 2) {
