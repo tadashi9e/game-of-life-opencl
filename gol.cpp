@@ -20,8 +20,8 @@ static int sample_rate = 1000;
 // ----------------------------------------------------------------------
 static int paused = 0;
 static std::vector<char> gol_map_image;
-static size_t gol_map_width = 1024;
-static size_t gol_map_height = 1024;
+static cl_int gol_map_width = 1024;
+static cl_int gol_map_height = 1024;
 static size_t gol_generation = 0;
 
 // ----------------------------------------------------------------------
@@ -45,9 +45,9 @@ static cl::Memory dev_gol_image;
 // ----------------------------------------------------------------------
 // work size info
 // ----------------------------------------------------------------------
-static std::vector<size_t> elements_size;
-static std::vector<size_t> global_work_size;
-static std::vector<size_t> local_work_size;
+static std::vector<cl_int> elements_size;
+static std::vector<cl_int> global_work_size;
+static std::vector<cl_int> local_work_size;
 
 // ----------------------------------------------------------------------
 // gl variables
@@ -390,8 +390,8 @@ void golMapRandFill(std::vector<char>& gol_map_init) {
   {
     srand(seed);
     // #pragma omp for collapse(2)
-    for (size_t j = 0; j < gol_map_width; ++j) {
-      for (size_t i = 0; i < gol_map_height; ++i) {
+    for (cl_int j = 0; j < gol_map_width; ++j) {
+      for (cl_int i = 0; i < gol_map_height; ++i) {
         gol_map_init[i * gol_map_width + j]
           |= (rand_r(&seed) < RAND_MAX / 10) ? R : 0;
         gol_map_init[i * gol_map_width + j]
@@ -409,8 +409,8 @@ void golMapRandFill_tricolor(std::vector<char>& gol_map_init) {
   {
     srand(seed);
     // #pragma omp for collapse(2)
-    for (size_t j = 0; j < gol_map_width; ++j) {
-      for (size_t i = 0; i < gol_map_height; ++i) {
+    for (cl_int j = 0; j < gol_map_width; ++j) {
+      for (cl_int i = 0; i < gol_map_height; ++i) {
         if (i < gol_map_height / 3) {
           gol_map_init[i * gol_map_width + j]
             |= (rand_r(&seed) < RAND_MAX / 10) ? R : 0;
@@ -547,15 +547,15 @@ int main(int argc, char *argv[]) {
       }
     }
     initGL(argc, argv);
-    elements_size = std::vector<size_t>({
+    elements_size = std::vector<cl_int>({
         gol_map_width, gol_map_height});  // cell slots
-    local_work_size = std::vector<size_t>({
+    local_work_size = std::vector<cl_int>({
         32, 32});
-    global_work_size = std::vector<size_t>({
-        static_cast<size_t>(ceil(
+    global_work_size = std::vector<cl_int>({
+        static_cast<cl_int>(ceil(
             static_cast<double>(elements_size[0])
             / local_work_size[0]) * local_work_size[0]),
-        static_cast<size_t>(ceil(
+        static_cast<cl_int>(ceil(
             static_cast<double>(elements_size[1])
             / local_work_size[1]) * local_work_size[1])});
     std::cout << "global_work_size[0]=" << global_work_size[0]
