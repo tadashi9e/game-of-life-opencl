@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <vector>
 #include <GL/glew.h>
 #define CL_HPP_ENABLE_EXCEPTIONS
@@ -13,13 +14,11 @@
 #include <GL/freeglut.h>
 #include <GL/glx.h>
 
-static int sample_rate = 1000;
-
 // ----------------------------------------------------------------------
 // game variables
 // ----------------------------------------------------------------------
 static int paused = 0;
-static std::vector<char> gol_map_image;
+static std::vector<cl_char> gol_map_image;
 static cl_int gol_map_width = 1024;
 static cl_int gol_map_height = 1024;
 static size_t gol_generation = 0;
@@ -317,6 +316,8 @@ static void displayTimer_cb(int dummy) {
   glutTimerFunc(refresh_mills, displayTimer_cb, 0);
 }
 
+static int step_count = 0;
+
 static void generationTimer_cb(int dummy) {
   if (paused == 1) {
     glutTimerFunc(gen_mills, generationTimer_cb, 0);
@@ -332,20 +333,29 @@ static void generationTimer_cb(int dummy) {
                                        cl::NDRange(local_work_size[0],
                                                    local_work_size[1]));
 
-    command_queue.finish();
+    // command_queue.finish();
+    command_queue.flush();
 
     command_queue.enqueueCopyBuffer(
         dev_gol_map_out, dev_gol_map_in, 0, 0,
-        sizeof(unsigned char) * global_work_size[0] * global_work_size[1]);
+        sizeof(cl_char) * global_work_size[0] * global_work_size[1]);
     command_queue.enqueueReleaseGLObjects(&dev_gol_image_vec);
     gol_generation++;
-
-    if (gol_generation % sample_rate == 0) {
-      const clock_t now = clock();
-      const double fps = static_cast<double>(sample_rate)
+    ++step_count;
+    const clock_t now = clock();
+    if (now > wall_clock + CLOCKS_PER_SEC) {
+      const double fps = static_cast<double>(step_count)
         / ((now - wall_clock) / CLOCKS_PER_SEC);
-      std::cout << "generation[" << gol_generation << "],"
-        "fps[" << fps << "]\r" << std::flush;
+      step_count = 0;
+      static std::string report;
+      std::stringstream ss;
+      ss << "step[" << gol_generation << "],fps[" << fps << "]";
+      std::string s = ss.str();
+      if (s.size() < report.size()) {
+        s += std::string(report.size() - s.size(), ' ');
+      }
+      report = s;
+      std::cout << report << "\r" << std::flush;
       wall_clock = now;
     }
     if (paused == 2) {
@@ -384,26 +394,22 @@ enum rps_type {
   P = 0x04,
 };
 
-void golMapRandFill(std::vector<char>& gol_map_init) {
+void golMapRandFill(std::vector<cl_char>& gol_map_init) {
   unsigned seed = time(0);
-  // #pragma omp parallel firstprivate(seed)
-  {
-    srand(seed);
-    // #pragma omp for collapse(2)
-    for (cl_int j = 0; j < gol_map_width; ++j) {
-      for (cl_int i = 0; i < gol_map_height; ++i) {
-        gol_map_init[i * gol_map_width + j]
-          |= (rand_r(&seed) < RAND_MAX / 10) ? R : 0;
-        gol_map_init[i * gol_map_width + j]
-          |= (rand_r(&seed) < RAND_MAX / 10) ? S : 0;
-        gol_map_init[i * gol_map_width + j]
-          |= (rand_r(&seed) < RAND_MAX / 10) ? P : 0;
-      }
+  srand(seed);
+  for (cl_int j = 0; j < gol_map_width; ++j) {
+    for (cl_int i = 0; i < gol_map_height; ++i) {
+      gol_map_init[i * gol_map_width + j]
+        |= (rand_r(&seed) < RAND_MAX / 10) ? R : 0;
+      gol_map_init[i * gol_map_width + j]
+        |= (rand_r(&seed) < RAND_MAX / 10) ? S : 0;
+      gol_map_init[i * gol_map_width + j]
+        |= (rand_r(&seed) < RAND_MAX / 10) ? P : 0;
     }
   }
 }
 
-void golMapRandFill_tricolor(std::vector<char>& gol_map_init) {
+void golMapRandFill_tricolor(std::vector<cl_char>& gol_map_init) {
   unsigned seed = time(0);
   // #pragma omp parallel firstprivate(seed)
   {
@@ -435,7 +441,7 @@ inline void rtrim(std::string &s) {
 }
 
 // Life1.05 file loader function
-void load_life105_file(std::vector<char>& gol_map_init,
+void load_life105_file(std::vector<cl_char>& gol_map_init,
                        const std::string& fname,
                        rps_type type,
                        int offset_x,
@@ -575,7 +581,7 @@ int main(int argc, char *argv[]) {
     /* end allocate host memory */
 
     /* init gol_map_init */
-    std::vector<char> gol_map_init;
+    std::vector<cl_char> gol_map_init;
     gol_map_init.resize(global_work_size[0] * global_work_size[1]);
     if (life105file_r.empty() &&
         life105file_s.empty() &&
