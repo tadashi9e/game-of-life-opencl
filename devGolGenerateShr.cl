@@ -48,13 +48,12 @@ bool next_alive(bool old_alive,
 __kernel void devGolGenerate(
     __global unsigned char *map_in,
     __global unsigned char *map_out,
-    __write_only image2d_t image,
-    int width,
-    int height) {
+    __write_only image2d_t image) {
+  const int width = get_global_size(0);
+  const int height = get_global_size(0);
   const int x = get_global_id(0);
   const int y = get_global_id(1);
 
-  if (x >= width || y >= height) return;
   char c;
   int cell_count_r = 0;
   int cell_count_s = 0;

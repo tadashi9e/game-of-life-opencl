@@ -54,7 +54,7 @@ static std::vector<cl_int> local_work_size;
 static int gen_mills = 0;
 static int refresh_mills = 1000.0/30.0;  // refresh interval in milliseconds
 static bool full_screen_mode = false;
-static char title[] = "Game of Life on OpenCL (shared)";
+static char title[] = "Game of Life on OpenCL";
 static int window_width  = 1024;     // Windowed mode's width
 static int window_height = 1024;     // Windowed mode's height
 static int window_pos_x   = 50;      // Windowed mode's top-left corner x
@@ -683,8 +683,6 @@ int main(int argc, char *argv[]) {
     kernel.setArg(0, dev_gol_map_in);
     kernel.setArg(1, dev_gol_map_out);
     kernel.setArg(2, dev_gol_image);
-    kernel.setArg(3, sizeof(cl_int), &elements_size[0]);
-    kernel.setArg(4, sizeof(cl_int), &elements_size[1]);
     command_queue.enqueueWriteBuffer(
         dev_gol_map_in, CL_FALSE, 0,
         sizeof(cl_char) * global_work_size[0] * global_work_size[1],
