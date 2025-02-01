@@ -10,7 +10,7 @@
 #include <vector>
 #include <GL/glew.h>
 #define CL_HPP_ENABLE_EXCEPTIONS
-#include <CL/cl.hpp>
+#include <CL/opencl.hpp>
 #include <GL/freeglut.h>
 #include <GL/glx.h>
 
