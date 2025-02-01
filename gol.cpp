@@ -556,7 +556,68 @@ int main(int argc, char *argv[]) {
     elements_size = std::vector<cl_int>({
         gol_map_width, gol_map_height});  // cell slots
     local_work_size = std::vector<cl_int>({
-        32, 32});
+        64, 64});
+
+    std::vector<cl::Platform> platforms;
+    cl::Platform::get(&platforms);
+    for (cl::Platform& plat : platforms) {
+      std::vector<cl::Device> devices;
+      plat.getDevices(CL_DEVICE_TYPE_GPU, &devices);
+      if (!devices.empty()) {
+        platform = plat;
+        device = devices.front();
+        const std::string platvendor = plat.getInfo<CL_PLATFORM_VENDOR>();
+        const std::string platname = plat.getInfo<CL_PLATFORM_NAME>();
+        const std::string platver = plat.getInfo<CL_PLATFORM_VERSION>();
+        std::cout << "platform: vendor[" << platvendor << "]"
+          ",name[" << platname << "]"
+          ",version[" << platver << "]" << std::endl;
+        const std::string devvendor = device.getInfo<CL_DEVICE_VENDOR>();
+        const std::string devname = device.getInfo<CL_DEVICE_NAME>();
+        const std::string devver = device.getInfo<CL_DEVICE_VERSION>();
+        std::cout << "device: vendor[" << devvendor << "]"
+          ",name[" << devname << "]"
+          ",version[" << devver << "]" << std::endl;
+        size_t max_work_group_size;
+        device.getInfo(CL_DEVICE_MAX_WORK_GROUP_SIZE,
+                       &max_work_group_size);
+        std::cout << "        MAX_WORK_GROUP_SIZE="
+                  << max_work_group_size << std::endl;
+        while (static_cast<size_t>(local_work_size[0] *
+                                   local_work_size[1]) > max_work_group_size) {
+          local_work_size[0] /= 2;
+          if (static_cast<size_t>(local_work_size[0] *
+                                  local_work_size[1]) > max_work_group_size) {
+            local_work_size[1] /= 2;
+          }
+        }
+        break;
+      }
+    }
+    const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>()();
+    cl_context_properties properties[7];
+    properties[0] = CL_GL_CONTEXT_KHR;
+    properties[1] =
+      reinterpret_cast<cl_context_properties>(glXGetCurrentContext());
+    properties[2] = CL_GLX_DISPLAY_KHR;
+    properties[3] =
+      reinterpret_cast<cl_context_properties>(glXGetCurrentDisplay());
+    properties[4] = CL_CONTEXT_PLATFORM;
+    properties[5] = reinterpret_cast<cl_context_properties>(platform_id);
+    properties[6] = 0;
+
+    clGetGLContextInfoKHR_fn myGetGLContextInfoKHR =
+      reinterpret_cast<clGetGLContextInfoKHR_fn>(
+          clGetExtensionFunctionAddressForPlatform(
+              platform_id, "clGetGLContextInfoKHR"));
+
+    size_t size;
+    myGetGLContextInfoKHR(properties, CL_DEVICES_FOR_GL_CONTEXT_KHR,
+                          sizeof(cl_device_id), &device, &size);
+
+    context = cl::Context(device, properties);
+    command_queue = cl::CommandQueue(context, device, 0);
+
     global_work_size = std::vector<cl_int>({
         static_cast<cl_int>(ceil(
             static_cast<double>(elements_size[0])
@@ -602,53 +663,6 @@ int main(int argc, char *argv[]) {
       }
     }
     /* end init gol_map_init */
-
-    std::vector<cl::Platform> platforms;
-    cl::Platform::get(&platforms);
-    for (cl::Platform& plat : platforms) {
-      std::vector<cl::Device> devices;
-      plat.getDevices(CL_DEVICE_TYPE_GPU, &devices);
-      if (!devices.empty()) {
-        platform = plat;
-        device = devices.front();
-        const std::string platvendor = plat.getInfo<CL_PLATFORM_VENDOR>();
-        const std::string platname = plat.getInfo<CL_PLATFORM_NAME>();
-        const std::string platver = plat.getInfo<CL_PLATFORM_VERSION>();
-        std::cout << "platform: vendor[" << platvendor << "]"
-          ",name[" << platname << "]"
-          ",version[" << platver << "]" << std::endl;
-        const std::string devvendor = device.getInfo<CL_DEVICE_VENDOR>();
-        const std::string devname = device.getInfo<CL_DEVICE_NAME>();
-        const std::string devver = device.getInfo<CL_DEVICE_VERSION>();
-        std::cout << "device: vendor[" << devvendor << "]"
-          ",name[" << devname << "]"
-          ",version[" << devver << "]" << std::endl;
-        break;
-      }
-    }
-    const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>()();
-    cl_context_properties properties[7];
-    properties[0] = CL_GL_CONTEXT_KHR;
-    properties[1] =
-      reinterpret_cast<cl_context_properties>(glXGetCurrentContext());
-    properties[2] = CL_GLX_DISPLAY_KHR;
-    properties[3] =
-      reinterpret_cast<cl_context_properties>(glXGetCurrentDisplay());
-    properties[4] = CL_CONTEXT_PLATFORM;
-    properties[5] = reinterpret_cast<cl_context_properties>(platform_id);
-    properties[6] = 0;
-
-    clGetGLContextInfoKHR_fn myGetGLContextInfoKHR =
-      reinterpret_cast<clGetGLContextInfoKHR_fn>(
-          clGetExtensionFunctionAddressForPlatform(
-              platform_id, "clGetGLContextInfoKHR"));
-
-    size_t size;
-    myGetGLContextInfoKHR(properties, CL_DEVICES_FOR_GL_CONTEXT_KHR,
-                          sizeof(cl_device_id), &device, &size);
-
-    context = cl::Context(device, properties);
-    command_queue = cl::CommandQueue(context, device, 0);
 
     /* create buffers */
     cl::ImageGL image(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D,
