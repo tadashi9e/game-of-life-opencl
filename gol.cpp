@@ -591,12 +591,12 @@ int main(int argc, char *argv[]) {
         ",version[" << platver << "]" << std::endl;
       std::vector<cl::Device> devices;
       plat.getDevices(CL_DEVICE_TYPE_GPU, &devices);
-      for (cl::Device dev : devices) {
+      for (cl::Device& dev : devices) {
         const std::string devvendor = dev.getInfo<CL_DEVICE_VENDOR>();
         const std::string devname = dev.getInfo<CL_DEVICE_NAME>();
         const std::string devver = dev.getInfo<CL_DEVICE_VERSION>();
         std::cout << ((dev_index == device_index) ? '*' : ' ') <<
-          "device: vendor[" << devvendor << "]"
+          "device[" << dev_index << "]: vendor[" << devvendor << "]"
           ",name[" << devname << "]"
           ",version[" << devver << "]" << std::endl;
         size_t max_work_group_size;
