@@ -1,3 +1,4 @@
+#include <getopt.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
@@ -494,15 +495,34 @@ void load_life105_file(std::vector<cl_char>& gol_map_init,
 int main(int argc, char *argv[]) {
   cl_int err;
   try {
+    size_t device_index = 0;
     std::string life105file_r;
     std::string life105file_s;
     std::string life105file_p;
     for (;;) {
-      int opt = getopt(argc, argv, "w:h:i:r:s:p:P");
-      if (opt == -1) {
+      int option_index = 0;
+      static struct option long_options[] = {
+        {"device", required_argument, 0, 0},
+        {"width", required_argument, 0, 'w'},
+        {"height", required_argument, 0, 'h'},
+        {"interval", required_argument, 0, 'i'},
+        {"rock", required_argument, 0, 'r'},
+        {"paper", required_argument, 0, 'p'},
+        {"scissors", required_argument, 0, 's'},
+        {"pause", no_argument, 0, 'P'},
+        {0, 0, 0}};
+      const int c = getopt_long(argc, argv, "w:h:i:r:p:s:P",
+                                long_options, &option_index);
+      if (c == -1) {
         break;
       }
-      switch (opt) {
+      switch (c) {
+      case 0:
+        if (std::string(long_options[option_index].name) ==
+            "device") {
+          device_index = atoi(optarg);
+        }
+        break;
       case 'w':
         {
           const int w = atoi(optarg);
@@ -560,39 +580,51 @@ int main(int argc, char *argv[]) {
 
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
+    bool device_found = false;
+    size_t dev_index = 0;
     for (cl::Platform& plat : platforms) {
+      const std::string platvendor = plat.getInfo<CL_PLATFORM_VENDOR>();
+      const std::string platname = plat.getInfo<CL_PLATFORM_NAME>();
+      const std::string platver = plat.getInfo<CL_PLATFORM_VERSION>();
+      std::cout << "platform: vendor[" << platvendor << "]"
+        ",name[" << platname << "]"
+        ",version[" << platver << "]" << std::endl;
       std::vector<cl::Device> devices;
       plat.getDevices(CL_DEVICE_TYPE_GPU, &devices);
-      if (!devices.empty()) {
-        platform = plat;
-        device = devices.front();
-        const std::string platvendor = plat.getInfo<CL_PLATFORM_VENDOR>();
-        const std::string platname = plat.getInfo<CL_PLATFORM_NAME>();
-        const std::string platver = plat.getInfo<CL_PLATFORM_VERSION>();
-        std::cout << "platform: vendor[" << platvendor << "]"
-          ",name[" << platname << "]"
-          ",version[" << platver << "]" << std::endl;
-        const std::string devvendor = device.getInfo<CL_DEVICE_VENDOR>();
-        const std::string devname = device.getInfo<CL_DEVICE_NAME>();
-        const std::string devver = device.getInfo<CL_DEVICE_VERSION>();
-        std::cout << "device: vendor[" << devvendor << "]"
+      for (cl::Device dev : devices) {
+        const std::string devvendor = dev.getInfo<CL_DEVICE_VENDOR>();
+        const std::string devname = dev.getInfo<CL_DEVICE_NAME>();
+        const std::string devver = dev.getInfo<CL_DEVICE_VERSION>();
+        std::cout << ((dev_index == device_index) ? '*' : ' ') <<
+          "device: vendor[" << devvendor << "]"
           ",name[" << devname << "]"
           ",version[" << devver << "]" << std::endl;
         size_t max_work_group_size;
-        device.getInfo(CL_DEVICE_MAX_WORK_GROUP_SIZE,
-                       &max_work_group_size);
+        dev.getInfo(CL_DEVICE_MAX_WORK_GROUP_SIZE,
+                    &max_work_group_size);
         std::cout << "        MAX_WORK_GROUP_SIZE="
                   << max_work_group_size << std::endl;
-        while (static_cast<size_t>(local_work_size[0] *
-                                   local_work_size[1]) > max_work_group_size) {
-          local_work_size[0] /= 2;
-          if (static_cast<size_t>(local_work_size[0] *
-                                  local_work_size[1]) > max_work_group_size) {
-            local_work_size[1] /= 2;
+        if (dev_index == device_index) {
+          while (static_cast<size_t>(
+              local_work_size[0] *
+              local_work_size[1]) > max_work_group_size) {
+            local_work_size[0] /= 2;
+            if (static_cast<size_t>(
+                local_work_size[0] *
+                local_work_size[1]) > max_work_group_size) {
+              local_work_size[1] /= 2;
+            }
           }
+          platform = plat;
+          device = dev;
+          device_found = true;
         }
-        break;
+        ++dev_index;
       }
+    }
+    if (!device_found) {
+      std::cerr << "device[" << device_index << "] not found" << std::endl;
+      exit(1);
     }
     const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>()();
     cl_context_properties properties[7];
