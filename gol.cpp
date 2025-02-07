@@ -1,3 +1,4 @@
+#include <getopt.h>
 #include <string.h>
 #include <math.h>
 #include <time.h>
@@ -6,21 +7,22 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <vector>
 #include <GL/glew.h>
+#define CL_HPP_TARGET_OPENCL_VERSION 220
 #define CL_HPP_ENABLE_EXCEPTIONS
-#include <CL/cl.hpp>
+#include <CL/opencl.hpp>
 #include <GL/freeglut.h>
 #include <GL/glx.h>
-
-static int sample_rate = 100000;
 
 // ----------------------------------------------------------------------
 // game variables
 // ----------------------------------------------------------------------
-static std::vector<char> gol_map_image;
-static size_t gol_map_width = 1024;
-static size_t gol_map_height = 1024;
+static int paused = 0;
+static std::vector<cl_char> gol_map_image;
+static cl_int gol_map_width = 1024;
+static cl_int gol_map_height = 1024;
 static size_t gol_generation = 0;
 
 // ----------------------------------------------------------------------
@@ -44,57 +46,154 @@ static cl::Memory dev_gol_image;
 // ----------------------------------------------------------------------
 // work size info
 // ----------------------------------------------------------------------
-static std::vector<size_t> elements_size;
-static std::vector<size_t> global_work_size;
-static std::vector<size_t> local_work_size;
+static std::vector<cl_int> elements_size;
+static std::vector<cl_int> global_work_size;
+static std::vector<cl_int> local_work_size;
 
 // ----------------------------------------------------------------------
 // gl variables
 // ----------------------------------------------------------------------
+static int gen_mills = 0;
 static int refresh_mills = 1000.0/30.0;  // refresh interval in milliseconds
 static bool full_screen_mode = false;
-static char title[] = "Game of Life on OpenCL (shared)";
+static char title[] = "Game of Life on OpenCL";
 static int window_width  = 1024;     // Windowed mode's width
 static int window_height = 1024;     // Windowed mode's height
 static int window_pos_x   = 50;      // Windowed mode's top-left corner x
 static int window_pos_y   = 50;      // Windowed mode's top-left corner y
-static double zoom = 1.0;
-static double ortho_left = -1.0;
-static double ortho_right = 1.0;
-static double ortho_top = 1.0;
-static double ortho_bottom = -1.0;
+static GLfloat translate_x = 0.0f;
+static GLfloat translate_y = 0.0f;
+static GLfloat zoom = 1.0f;
+static const GLfloat ORTHO_LEFT = -1.0f;
+static const GLfloat ORTHO_RIGHT = 1.0f;
+static const GLfloat ORTHO_TOP = 1.0f;
+static const GLfloat ORTHO_BOTTOM = -1.0f;
 static clock_t wall_clock = 0;
 
 static GLuint rendered_texture;
 
+static void report_cl_error(const cl::Error& err) {
+  const char* s = "-";
+  switch (err.err()) {
+#define CASE_CL_CODE(code)\
+    case code: s = #code; break
+    CASE_CL_CODE(CL_DEVICE_NOT_FOUND);
+    CASE_CL_CODE(CL_DEVICE_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_COMPILER_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_MEM_OBJECT_ALLOCATION_FAILURE);
+    CASE_CL_CODE(CL_OUT_OF_RESOURCES);
+    CASE_CL_CODE(CL_OUT_OF_HOST_MEMORY);
+    CASE_CL_CODE(CL_PROFILING_INFO_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_MEM_COPY_OVERLAP);
+    CASE_CL_CODE(CL_IMAGE_FORMAT_MISMATCH);
+    CASE_CL_CODE(CL_IMAGE_FORMAT_NOT_SUPPORTED);
+    CASE_CL_CODE(CL_BUILD_PROGRAM_FAILURE);
+    CASE_CL_CODE(CL_MAP_FAILURE);
+#ifdef CL_VERSION_1_1
+    CASE_CL_CODE(CL_MISALIGNED_SUB_BUFFER_OFFSET);
+    CASE_CL_CODE(CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST);
+#endif
+#ifdef CL_VERSION_1_2
+    CASE_CL_CODE(CL_COMPILE_PROGRAM_FAILURE);
+    CASE_CL_CODE(CL_LINKER_NOT_AVAILABLE);
+    CASE_CL_CODE(CL_LINK_PROGRAM_FAILURE);
+    CASE_CL_CODE(CL_DEVICE_PARTITION_FAILED);
+    CASE_CL_CODE(CL_KERNEL_ARG_INFO_NOT_AVAILABLE);
+#endif
+    CASE_CL_CODE(CL_INVALID_VALUE);
+    CASE_CL_CODE(CL_INVALID_DEVICE_TYPE);
+    CASE_CL_CODE(CL_INVALID_PLATFORM);
+    CASE_CL_CODE(CL_INVALID_DEVICE);
+    CASE_CL_CODE(CL_INVALID_CONTEXT);
+    CASE_CL_CODE(CL_INVALID_QUEUE_PROPERTIES);
+    CASE_CL_CODE(CL_INVALID_COMMAND_QUEUE);
+    CASE_CL_CODE(CL_INVALID_HOST_PTR);
+    CASE_CL_CODE(CL_INVALID_MEM_OBJECT);
+    CASE_CL_CODE(CL_INVALID_IMAGE_FORMAT_DESCRIPTOR);
+    CASE_CL_CODE(CL_INVALID_IMAGE_SIZE);
+    CASE_CL_CODE(CL_INVALID_SAMPLER);
+    CASE_CL_CODE(CL_INVALID_BINARY);
+    CASE_CL_CODE(CL_INVALID_BUILD_OPTIONS);
+    CASE_CL_CODE(CL_INVALID_PROGRAM);
+    CASE_CL_CODE(CL_INVALID_PROGRAM_EXECUTABLE);
+    CASE_CL_CODE(CL_INVALID_KERNEL_NAME);
+    CASE_CL_CODE(CL_INVALID_KERNEL_DEFINITION);
+    CASE_CL_CODE(CL_INVALID_KERNEL);
+    CASE_CL_CODE(CL_INVALID_ARG_INDEX);
+    CASE_CL_CODE(CL_INVALID_ARG_VALUE);
+    CASE_CL_CODE(CL_INVALID_ARG_SIZE);
+    CASE_CL_CODE(CL_INVALID_KERNEL_ARGS);
+    CASE_CL_CODE(CL_INVALID_WORK_DIMENSION);
+    CASE_CL_CODE(CL_INVALID_WORK_GROUP_SIZE);
+    CASE_CL_CODE(CL_INVALID_WORK_ITEM_SIZE);
+    CASE_CL_CODE(CL_INVALID_GLOBAL_OFFSET);
+    CASE_CL_CODE(CL_INVALID_EVENT_WAIT_LIST);
+    CASE_CL_CODE(CL_INVALID_EVENT);
+    CASE_CL_CODE(CL_INVALID_OPERATION);
+    CASE_CL_CODE(CL_INVALID_GL_OBJECT);
+    CASE_CL_CODE(CL_INVALID_BUFFER_SIZE);
+    CASE_CL_CODE(CL_INVALID_MIP_LEVEL);
+    CASE_CL_CODE(CL_INVALID_GLOBAL_WORK_SIZE);
+#ifdef CL_VERSION_1_1
+    CASE_CL_CODE(CL_INVALID_PROPERTY);
+#endif
+#ifdef CL_VERSION_1_2
+    CASE_CL_CODE(CL_INVALID_IMAGE_DESCRIPTOR);
+    CASE_CL_CODE(CL_INVALID_COMPILER_OPTIONS);
+    CASE_CL_CODE(CL_INVALID_LINKER_OPTIONS);
+    CASE_CL_CODE(CL_INVALID_DEVICE_PARTITION_COUNT);
+#endif
+#ifdef CL_VERSION_2_0
+    CASE_CL_CODE(CL_INVALID_PIPE_SIZE);
+    CASE_CL_CODE(CL_INVALID_DEVICE_QUEUE);
+#endif
+#ifdef CL_VERSION_2_2
+    CASE_CL_CODE(CL_INVALID_SPEC_ID);
+    CASE_CL_CODE(CL_MAX_SIZE_RESTRICTION_EXCEEDED);
+#endif
+    CASE_CL_CODE(CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR);
+  }
+  std::cerr << "caught exception: " << err.what() <<
+    ": " << s << "(" << err.err() << ")" << std::endl;
+}
+
 // ----------------------------------------------------------------------
 // gl functions
 // ----------------------------------------------------------------------
-static void display() {
+static void glCheck_(const char* target) {
+  const GLenum st = glGetError();
+  if (st) {
+    std::cout << target << ": " << gluErrorString(st) << std::endl;
+  }
+}
+static void display_cb() {
   glClear(GL_COLOR_BUFFER_BIT);
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
 
-  glOrtho(ortho_left, ortho_right, ortho_bottom, ortho_top, -10, 10);
-  glScalef(zoom, zoom, 1.0);
+  glOrtho(ORTHO_LEFT, ORTHO_RIGHT,
+          ORTHO_BOTTOM, ORTHO_TOP,
+          -10, 10);
+  glScalef(zoom, zoom, 1.0f);
+  glTranslatef(translate_x, translate_y, 0.0f);
 
   glEnable(GL_TEXTURE_2D);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
-               gol_map_width, gol_map_height,
-               0, GL_RGBA, GL_UNSIGNED_BYTE, &gol_map_image.front());
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
+  glCheck_("glBindTexture");
 
-  glBegin(GL_QUADS);
-  glTexCoord2f(0.0, 0.0); glVertex3f(-1.0, -1.0, 0.0);
-  glTexCoord2f(1.0, 0.0); glVertex3f(1.0,  -1.0, 0.0);
-  glTexCoord2f(1.0, 1.0); glVertex3f(1.0,   1.0, 0.0);
-  glTexCoord2f(0.0, 1.0); glVertex3f(-1.0,  1.0, 0.0);
+  glBegin(GL_TRIANGLES);
+  glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f, 0.0f);
+  glTexCoord2f(1.0f, 0.0f); glVertex3f(1.0f,  -1.0f, 0.0f);
+  glTexCoord2f(1.0f, 1.0f); glVertex3f(1.0f,   1.0f, 0.0f);
+  glTexCoord2f(1.0f, 1.0f); glVertex3f(1.0f,   1.0f, 0.0f);
+  glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f, 0.0f);
+  glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f, 0.0f);
   glEnd();
 
   glutSwapBuffers();
 }
 
-static void reshape(GLsizei width, GLsizei height) {
+static void reshape_cb(GLsizei width, GLsizei height) {
   // Set the viewport to cover the new window
   glViewport(0, 0, width, height);
 
@@ -103,7 +202,7 @@ static void reshape(GLsizei width, GLsizei height) {
   glLoadIdentity();             // Reset the projection matrix
 }
 
-static void specialKeys(int key, int x, int y) {
+static void specialKeys_cb(int key, int x, int y) {
   switch (key) {
   case GLUT_KEY_F1:    // F1: Toggle between full-screen and windowed mode
     full_screen_mode = !full_screen_mode;         // Toggle state
@@ -124,9 +223,9 @@ static void specialKeys(int key, int x, int y) {
     }
     break;
   case GLUT_KEY_HOME:
-    ortho_left = ortho_top = 1.0;
-    ortho_right = ortho_bottom = -1.0;
-    zoom = 1.0;
+    zoom = 1.0f;
+    translate_x = 0.0f;
+    translate_y = 0.0f;
     glutPostRedisplay();
     break;
   case GLUT_KEY_END:
@@ -134,39 +233,51 @@ static void specialKeys(int key, int x, int y) {
     break;
   }
 }
-
-static void mouse(int button, int state, int x, int y) {
-  // Wheel reports as button 3(scroll up) and button 4(scroll down)
-  if ((button == 3) || (button == 4)) {  // It's a wheel event
-    // Each wheel event reports like a button click, GLUT_DOWN then GLUT_UP
-    if (state == GLUT_UP) return;  // Disregard redundant GLUT_UP events
-    std::cout << "Scroll " << ((button == 3) ? "Up" : "Down")
-              << " At " << x << " " << y << std::endl;
-
-    if (button == 3)
-      zoom += 0.1;
-    else
-      zoom -= 0.1;
-
-    if (zoom < 0) zoom = 0.1;
-
-    GLfloat aspect = (GLfloat)window_width / (GLfloat)window_height;
-
-    if (window_width >= window_height) {
-      ortho_left = (GLfloat)x / window_width - 2.0 / zoom;
-      ortho_right = (GLfloat)x / window_width + 2.0 / zoom;
-      ortho_top = (GLfloat)y / window_height / aspect + 2.0 / zoom;
-      ortho_bottom = (GLfloat)y / window_height / aspect - 2.0 / zoom;
+static void nonspecialKeys_cb(unsigned char key, int x, int y) {
+  switch (key) {
+  case 'p':
+    if (paused == 0) {
+      paused = 2;
     } else {
-      ortho_left = (GLfloat)x / window_width * aspect - 2.0 / zoom;
-      ortho_right = (GLfloat)x / window_width * aspect + 2.0 / zoom;
-      ortho_top = (GLfloat)y / window_height + 2.0 / zoom;
-      ortho_bottom = (GLfloat)y / window_height - 2.0 / zoom;
+      paused = 0;
     }
-  } else {  // normal button event
-    std::cout << "Button " << ((state == GLUT_DOWN) ? "Down" : "Up")
-              << " At " << x << " " << y << std::endl;
+    break;
+  case 'q':
+    glutLeaveMainLoop();
+    break;
   }
+}
+static void
+mouse_cb(int button, int state, int x, int y) {
+  switch (button) {
+  case GLUT_LEFT_BUTTON:
+    if (state == GLUT_DOWN) {
+      translate_x -=
+        ((ORTHO_RIGHT - ORTHO_LEFT) * x / window_width + ORTHO_LEFT) / zoom;
+      translate_y -=
+        ((ORTHO_BOTTOM - ORTHO_TOP) * y / window_height + ORTHO_TOP) / zoom;
+      glutPostRedisplay();
+    }
+    break;
+  case GLUT_RIGHT_BUTTON:
+    if (state == GLUT_DOWN) {
+      translate_x = 0.0f;
+      translate_y = 0.0f;
+      zoom = 1.0f;
+      glutPostRedisplay();
+    }
+    break;
+  }
+}
+static void
+wheel_cb(int wheel, int direction, int x, int y) {
+  if (direction == 1) {
+    zoom += 0.1f;
+  } else {
+    zoom -= 0.1f;
+  }
+  zoom = std::max(zoom, 1.0f);
+  glutPostRedisplay();
 }
 
 static void initGL(int argc, char *argv[]) {
@@ -176,35 +287,44 @@ static void initGL(int argc, char *argv[]) {
   glutInitWindowPosition(window_pos_x, window_pos_y);
   glutCreateWindow(title);
 
-  glutDisplayFunc(display);
-  glutReshapeFunc(reshape);
+  glutDisplayFunc(display_cb);
+  glutReshapeFunc(reshape_cb);
   // Register callback handler for special-key event
-  glutSpecialFunc(specialKeys);
-  glutMouseFunc(mouse);
+  glutSpecialFunc(specialKeys_cb);
+  glutKeyboardFunc(nonspecialKeys_cb);
+  glutMouseFunc(mouse_cb);
+  glutMouseWheelFunc(wheel_cb);
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
   // texture
   glEnable(GL_TEXTURE_2D);
 
   glGenTextures(1, &rendered_texture);
+  glCheck_("glGenTexture");
   glBindTexture(GL_TEXTURE_2D, rendered_texture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST_MIPMAP_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F,
                gol_map_width, gol_map_height,
-               0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-
+               0, GL_RGBA, GL_FLOAT, 0);
+  glCheck_("glTexImage2D");
   glFinish();
 }
 
-static void displayTimer(int dummy) {
+static void displayTimer_cb(int dummy) {
   glutPostRedisplay();
-  glutTimerFunc(refresh_mills, displayTimer, 0);
+  glutTimerFunc(refresh_mills, displayTimer_cb, 0);
 }
 
-static void generationTimer(int dummy) {
+static int step_count = 0;
+
+static void generationTimer_cb(int dummy) {
+  if (paused == 1) {
+    glutTimerFunc(gen_mills, generationTimer_cb, 0);
+    return;
+  }
   try {
     std::vector<cl::Memory> dev_gol_image_vec({dev_gol_image});
     command_queue.enqueueAcquireGLObjects(&dev_gol_image_vec);
@@ -215,24 +335,35 @@ static void generationTimer(int dummy) {
                                        cl::NDRange(local_work_size[0],
                                                    local_work_size[1]));
 
-    command_queue.finish();
+    // command_queue.finish();
+    command_queue.flush();
 
     command_queue.enqueueCopyBuffer(
         dev_gol_map_out, dev_gol_map_in, 0, 0,
-        sizeof(unsigned char) * global_work_size[0] * global_work_size[1]);
+        sizeof(cl_char) * global_work_size[0] * global_work_size[1]);
     command_queue.enqueueReleaseGLObjects(&dev_gol_image_vec);
     gol_generation++;
-
-    if (gol_generation % sample_rate == 0) {
-      const clock_t now = clock();
-      const double fps = static_cast<double>(sample_rate)
+    ++step_count;
+    const clock_t now = clock();
+    if (now > wall_clock + CLOCKS_PER_SEC) {
+      const double fps = static_cast<double>(step_count)
         / ((now - wall_clock) / CLOCKS_PER_SEC);
-      std::cout << "generation[" << gol_generation << "],"
-        "fps[" << fps << "]" << std::endl;
+      step_count = 0;
+      static std::string report;
+      std::stringstream ss;
+      ss << "step[" << gol_generation << "],fps[" << fps << "]";
+      std::string s = ss.str();
+      if (s.size() < report.size()) {
+        s += std::string(report.size() - s.size(), ' ');
+      }
+      report = s;
+      std::cout << report << "\r" << std::flush;
       wall_clock = now;
     }
-
-    glutTimerFunc(0, generationTimer, 0);
+    if (paused == 2) {
+      paused = 1;
+    }
+    glutTimerFunc(gen_mills, generationTimer_cb, 0);
   } catch (const cl::Error& err) {
     std::cerr << err.what() << std::endl;
     throw;
@@ -240,8 +371,8 @@ static void generationTimer(int dummy) {
 }
 
 static void startGL() {
-  glutTimerFunc(0, displayTimer, 0);
-  glutTimerFunc(0, generationTimer, 0);
+  glutTimerFunc(0, displayTimer_cb, 0);
+  glutTimerFunc(0, generationTimer_cb, 0);
   glutMainLoop();
 }
 
@@ -258,16 +389,16 @@ static std::string loadProgramSource(const char *filename) {
 // ----------------------------------------------------------------------
 // game functions
 // ----------------------------------------------------------------------
-std::vector<char> golMapRandFill() {
-  std::vector<char> gol_map_init;
+std::vector<cl_char> golMapRandFill() {
+  std::vector<cl_char> gol_map_init;
   gol_map_init.resize(global_work_size[0] * global_work_size[1]);
   unsigned seed = time(0);
   // #pragma omp parallel firstprivate(seed)
   {
     srand(seed);
     // #pragma omp for collapse(2)
-    for (size_t j = 0; j < gol_map_width; ++j) {
-      for (size_t i = 0; i < gol_map_height; ++i) {
+    for (cl_int j = 0; j < gol_map_width; ++j) {
+      for (cl_int i = 0; i < gol_map_height; ++i) {
         gol_map_init[i * gol_map_width + j] =
           (rand_r(&seed) > RAND_MAX / 2) ? 1 : 0;
       }
@@ -283,8 +414,8 @@ inline void rtrim(std::string &s) {
 }
 
 // Life1.05 file loader function
-std::vector<char> load_life105_file(const std::string& fname) {
-  std::vector<char> gol_map_init;
+std::vector<cl_char> load_life105_file(const std::string& fname) {
+  std::vector<cl_char> gol_map_init;
   gol_map_init.resize(global_work_size[0] * global_work_size[1]);
   std::ifstream f;
   f.open(fname);
@@ -321,7 +452,6 @@ std::vector<char> load_life105_file(const std::string& fname) {
         break;
       case '*':
         gol_map_init[y * gol_map_width + x] = 1;
-        std::cout << "(" << x << "," << y << ")" << std::endl;
         break;
       default:
         std::cout << "LIFE1.05: invalid '" << line << "'" << std::endl;
@@ -338,15 +468,29 @@ std::vector<char> load_life105_file(const std::string& fname) {
 int main(int argc, char *argv[]) {
   cl_int err;
   try {
+    size_t device_index = 0;
     std::string life105file;
     for (;;) {
-      int opt = getopt(argc, argv, "w:h:f:");
-      if (opt == -1) {
+      int option_index = 0;
+      static struct option long_options[] = {
+        {"device", required_argument, 0, 0},
+        {"width", required_argument, 0, 'w'},
+        {"height", required_argument, 0, 'h'},
+        {"interval", required_argument, 0, 'i'},
+        {"file", required_argument, 0, 'f'},
+        {"pause", no_argument, 0, 'P'},
+        {0, 0, 0}};
+      const int c = getopt_long(argc, argv, "w:h:i:r:p:s:P",
+                                long_options, &option_index);
+      if (c == -1) {
         break;
       }
-      switch (opt) {
-      case 'f':
-        life105file = optarg;
+      switch (c) {
+      case 0:
+        if (std::string(long_options[option_index].name) ==
+            "device") {
+          device_index = atoi(optarg);
+        }
         break;
       case 'w':
         {
@@ -362,73 +506,84 @@ int main(int argc, char *argv[]) {
           window_height = h;
         }
         break;
+      case 'i':
+        gen_mills = atoi(optarg);
+        break;
+      case 'f':
+        life105file = optarg;
+        break;
+      case 'P':
+        paused = 2;
+        break;
       default:
-        std::cerr << "Usage:" << argv[0] <<
-                  " [-w width]"
-                  " [-h height]"
-                  " [-f Life105_file]" << std::endl;
+        std::cerr << "Usage: " << argv[0] <<
+          " [-w width]"
+          " [-h height]"
+          " [-i interval_millis]"
+          " [-f Life105_file]"
+          " [-P]" << std::endl;
+        std::cerr << " -w : field width." << std::endl;
+        std::cerr << " -h : field height." << std::endl;
+        std::cerr << " -i : step interval in milli seconds." << std::endl;
+        std::cerr << " -f : Life1.05 format file." << std::endl;
+        std::cerr << " -P : Pause at start. Will be released by 'p' key."
+                  << std::endl;
         exit(1);
       }
     }
     initGL(argc, argv);
-    elements_size = std::vector<size_t>({
+    elements_size = std::vector<cl_int>({
         gol_map_width, gol_map_height});  // cell slots
-    local_work_size = std::vector<size_t>({
-        32, 32});
-    global_work_size = std::vector<size_t>({
-        static_cast<size_t>(ceil(
-            static_cast<double>(elements_size[0])
-            / local_work_size[0]) * local_work_size[0]),
-        static_cast<size_t>(ceil(
-            static_cast<double>(elements_size[1])
-            / local_work_size[1]) * local_work_size[1])});
-    std::cout << "global_work_size[0]=" << global_work_size[0]
-              << ", local_work_size[0]=" << local_work_size[0]
-              << ", elements_size[0]=" << elements_size[0]
-              << ", work_groups_x="
-              << (global_work_size[0] / local_work_size[0])
-              << std::endl;
-    std::cout << "global_work_size[1]=" << global_work_size[1]
-              << ", local_work_size[1]=" << local_work_size[1]
-              << ", elements_size[1]=" << elements_size[1]
-              << ", work_groups_y="
-              << (global_work_size[1] / local_work_size[1])
-              << std::endl;
-    /* allocate host memory */
-    gol_map_image.resize(global_work_size[0] * global_work_size[1] * 4);
-    /* end allocate host memory */
-
-    /* init gol_map_init */
-    std::vector<char> gol_map_init;
-    if (life105file.empty()) {
-      gol_map_init = golMapRandFill();
-    } else {
-      gol_map_init = load_life105_file(life105file);
-    }
-    /* end init gol_map_init */
+    local_work_size = std::vector<cl_int>({
+        64, 64});
 
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
+    bool device_found = false;
+    size_t dev_index = 0;
     for (cl::Platform& plat : platforms) {
+      const std::string platvendor = plat.getInfo<CL_PLATFORM_VENDOR>();
+      const std::string platname = plat.getInfo<CL_PLATFORM_NAME>();
+      const std::string platver = plat.getInfo<CL_PLATFORM_VERSION>();
+      std::cout << "platform: vendor[" << platvendor << "]"
+        ",name[" << platname << "]"
+        ",version[" << platver << "]" << std::endl;
       std::vector<cl::Device> devices;
       plat.getDevices(CL_DEVICE_TYPE_GPU, &devices);
-      if (!devices.empty()) {
-        platform = plat;
-        device = devices.front();
-        const std::string platvendor = plat.getInfo<CL_PLATFORM_VENDOR>();
-        const std::string platname = plat.getInfo<CL_PLATFORM_NAME>();
-        const std::string platver = plat.getInfo<CL_PLATFORM_VERSION>();
-        std::cout << "platform: vendor[" << platvendor << "]"
-          ",name[" << platname << "]"
-          ",version[" << platver << "]" << std::endl;
-        const std::string devvendor = device.getInfo<CL_DEVICE_VENDOR>();
-        const std::string devname = device.getInfo<CL_DEVICE_NAME>();
-        const std::string devver = device.getInfo<CL_DEVICE_VERSION>();
-        std::cout << "device: vendor[" << devvendor << "]"
+      for (cl::Device& dev : devices) {
+        const std::string devvendor = dev.getInfo<CL_DEVICE_VENDOR>();
+        const std::string devname = dev.getInfo<CL_DEVICE_NAME>();
+        const std::string devver = dev.getInfo<CL_DEVICE_VERSION>();
+        std::cout << ((dev_index == device_index) ? '*' : ' ') <<
+          "device[" << dev_index << "]: vendor[" << devvendor << "]"
           ",name[" << devname << "]"
           ",version[" << devver << "]" << std::endl;
-        break;
+        size_t max_work_group_size;
+        dev.getInfo(CL_DEVICE_MAX_WORK_GROUP_SIZE,
+                    &max_work_group_size);
+        std::cout << "        MAX_WORK_GROUP_SIZE="
+                  << max_work_group_size << std::endl;
+        if (dev_index == device_index) {
+          while (static_cast<size_t>(
+              local_work_size[0] *
+              local_work_size[1]) > max_work_group_size) {
+            local_work_size[0] /= 2;
+            if (static_cast<size_t>(
+                local_work_size[0] *
+                local_work_size[1]) > max_work_group_size) {
+              local_work_size[1] /= 2;
+            }
+          }
+          platform = plat;
+          device = dev;
+          device_found = true;
+        }
+        ++dev_index;
       }
+    }
+    if (!device_found) {
+      std::cerr << "device[" << device_index << "] not found" << std::endl;
+      exit(1);
     }
     const cl_platform_id platform_id = device.getInfo<CL_DEVICE_PLATFORM>()();
     cl_context_properties properties[7];
@@ -453,6 +608,39 @@ int main(int argc, char *argv[]) {
 
     context = cl::Context(device, properties);
     command_queue = cl::CommandQueue(context, device, 0);
+
+    global_work_size = std::vector<cl_int>({
+        static_cast<cl_int>(ceil(
+            static_cast<double>(elements_size[0])
+            / local_work_size[0]) * local_work_size[0]),
+        static_cast<cl_int>(ceil(
+            static_cast<double>(elements_size[1])
+            / local_work_size[1]) * local_work_size[1])});
+    std::cout << "global_work_size[0]=" << global_work_size[0]
+              << ", local_work_size[0]=" << local_work_size[0]
+              << ", elements_size[0]=" << elements_size[0]
+              << ", work_groups_x="
+              << (global_work_size[0] / local_work_size[0])
+              << std::endl;
+    std::cout << "global_work_size[1]=" << global_work_size[1]
+              << ", local_work_size[1]=" << local_work_size[1]
+              << ", elements_size[1]=" << elements_size[1]
+              << ", work_groups_y="
+              << (global_work_size[1] / local_work_size[1])
+              << std::endl;
+    /* allocate host memory */
+    gol_map_image.resize(global_work_size[0] * global_work_size[1] * 4);
+    /* end allocate host memory */
+
+    /* init gol_map_init */
+    std::vector<cl_char> gol_map_init;
+    gol_map_init.resize(global_work_size[0] * global_work_size[1]);
+    if (life105file.empty()) {
+      gol_map_init = golMapRandFill();
+    } else {
+      gol_map_init = load_life105_file(life105file);
+    }
+    /* end init gol_map_init */
 
     /* create buffers */
     cl::ImageGL image(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D,
@@ -496,7 +684,7 @@ int main(int argc, char *argv[]) {
 
     startGL();
   } catch (const cl::Error& err) {
-    std::cerr << err.what() << std::endl;
+    report_cl_error(err);
   }
   return 0;
 }

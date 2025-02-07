@@ -1,7 +1,10 @@
+CXXFLAGS=-g -Wall
+LDFLAGS=`pkg-config --cflags --libs OpenCL glut glu gl`
+
 all: gol
 
 gol: gol.cpp
-	g++ -Wall -I/usr/local/cuda/include gol.cpp -o gol -g -lOpenCL -lglut -lGLEW -lGLU -lGL -fopenmp
+	g++ $(CXXFLAGS) gol.cpp -o gol $(LDFLAGS)
 
 clean:
 	rm -rf gol
