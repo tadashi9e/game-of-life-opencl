@@ -473,24 +473,21 @@ int main(int argc, char *argv[]) {
     for (;;) {
       int option_index = 0;
       static struct option long_options[] = {
-        {"device", required_argument, 0, 0},
+        {"device", required_argument, 0, 'd'},
         {"width", required_argument, 0, 'w'},
         {"height", required_argument, 0, 'h'},
         {"interval", required_argument, 0, 'i'},
         {"file", required_argument, 0, 'f'},
         {"pause", no_argument, 0, 'P'},
         {0, 0, 0}};
-      const int c = getopt_long(argc, argv, "w:h:i:r:p:s:P",
+      const int c = getopt_long(argc, argv, "d:w:h:i:f:P",
                                 long_options, &option_index);
       if (c == -1) {
         break;
       }
       switch (c) {
-      case 0:
-        if (std::string(long_options[option_index].name) ==
-            "device") {
-          device_index = atoi(optarg);
-        }
+      case 'd':
+        device_index = atoi(optarg);
         break;
       case 'w':
         {
@@ -517,11 +514,13 @@ int main(int argc, char *argv[]) {
         break;
       default:
         std::cerr << "Usage: " << argv[0] <<
+          " [-d device_index]"
           " [-w width]"
           " [-h height]"
           " [-i interval_millis]"
           " [-f Life105_file]"
           " [-P]" << std::endl;
+        std::cerr << " -d : device index." << std::endl;
         std::cerr << " -w : field width." << std::endl;
         std::cerr << " -h : field height." << std::endl;
         std::cerr << " -i : step interval in milli seconds." << std::endl;
