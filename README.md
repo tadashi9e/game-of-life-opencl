@@ -18,11 +18,11 @@ make
 ## Execution
 
 ```
-./gol [-w WIDTH] [-h HEIGHT] [-f file]
+gol [-d device_index] [-w width] [-h height] [-i interval_millis] [-f Life105_file] [-P]
+ -d, --device    : Select compute device.
+ -w, --width     : Field width.
+ -h, --height    : Field height.
+ -i, --interval  : Step interval in milli seconds.
+ -f, --file      : Life1.05 format file.
+ -P, --pause     : Pause at start. Will be released by 'p' key.
 ```
-
- -w : field width
- -h : field height
- -f : Life1.05 format file
-
-

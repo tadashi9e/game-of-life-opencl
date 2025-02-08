@@ -466,7 +466,6 @@ std::vector<cl_char> load_life105_file(const std::string& fname) {
 }
 
 int main(int argc, char *argv[]) {
-  cl_int err;
   try {
     size_t device_index = 0;
     std::string life105file;
@@ -520,13 +519,12 @@ int main(int argc, char *argv[]) {
           " [-i interval_millis]"
           " [-f Life105_file]"
           " [-P]" << std::endl;
-        std::cerr << " -d : device index." << std::endl;
-        std::cerr << " -w : field width." << std::endl;
-        std::cerr << " -h : field height." << std::endl;
-        std::cerr << " -i : step interval in milli seconds." << std::endl;
-        std::cerr << " -f : Life1.05 format file." << std::endl;
-        std::cerr << " -P : Pause at start. Will be released by 'p' key."
-                  << std::endl;
+        std::cerr << " -d, --device    : Select compute device." << std::endl;
+        std::cerr << " -w, --width     : Field width." << std::endl;
+        std::cerr << " -h, --height    : Field height." << std::endl;
+        std::cerr << " -i, --interval  : Step interval in milli seconds." << std::endl;
+        std::cerr << " -f, --file      : Life1.05 format file." << std::endl;
+        std::cerr << " -P, --pause     : Pause at start. Will be released by 'p' key." << std::endl;
         exit(1);
       }
     }
@@ -642,9 +640,8 @@ int main(int argc, char *argv[]) {
     /* end init gol_map_init */
 
     /* create buffers */
-    cl::ImageGL image(context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D,
-                      0, rendered_texture, &err);
-    dev_gol_image = image();
+    dev_gol_image = cl::ImageGL(
+        context, CL_MEM_WRITE_ONLY, GL_TEXTURE_2D, 0, rendered_texture);
     dev_gol_map_in = cl::Buffer(
         context, CL_MEM_READ_WRITE,
         sizeof(cl_char) * global_work_size[0] * global_work_size[1]);
