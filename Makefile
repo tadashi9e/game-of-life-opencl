@@ -1,5 +1,5 @@
-CXXFLAGS=-g -Wall
-LDFLAGS=`pkg-config --cflags --libs OpenCL glut glu gl`
+CXXFLAGS=-g -Wall `pkg-config --cflags OpenCL glut glu gl`
+LDFLAGS=`pkg-config --libs OpenCL glut glu gl`
 
 all: gol
 
